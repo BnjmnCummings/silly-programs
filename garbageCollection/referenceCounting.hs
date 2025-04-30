@@ -21,6 +21,7 @@ data GCAC =
          Plain TAC
          | Incref String     -- incref x
          | Decref String     -- decref x
+         | Free String       -- free x
          deriving (Show, Eq)
 
 type Alloc = [(String, Int)] -- Variable to number of references (ignoring the actual memory address)
@@ -51,25 +52,35 @@ updateAlloc alloc var delta = update (lookup var alloc)
         update (Just count) = (var, count + delta) : filter ((/= var) . fst) alloc -- list comprehension?
         update Nothing      = (var, delta) : alloc
 
--- Helper: If 'var' was allocated, decrement its refcount
+-- if the variable being defined already points to allocated memory, then decrement
 handleOverwrite :: Alloc -> String -> ([GCAC], Alloc)
-handleOverwrite alloc var =
-  case lookup var alloc of
-    Just count | count > 0 ->
-      let newAlloc = updateAlloc alloc var (-1)
-      in ([Decref var], newAlloc)
-    _ -> ([], alloc)
+handleOverwrite alloc var = handleOverwrite' (lookup var alloc)
+    where
+        handleOverwrite' :: Maybe Int -> ([GCAC], Alloc)
+        handleOverwrite' (Just count)
+            | count > 1 = ([Decref var], newAlloc)
+            | count == 1 = ([Decref var, Free var], newAlloc)
+            | otherwise = ([], alloc) -- shouldnt happen
+                 where 
+                    newAlloc = updateAlloc alloc var (-1)
 
--- Helper: Increment refcount for vars in 'expr' that are allocated
+        handleOverwrite' Nothing = ([], alloc)
+
+-- if theyve alrady been defined and point to allocated memory, then increment
+-- NOTE: we're not handling the case where a varaible is used before it is defined
 handleExpr :: Alloc -> Expr -> ([GCAC], Alloc)
-handleExpr alloc expr =
-  let vars = varsInExpr expr
-      (increfs, newAlloc) = foldr f ([], alloc) vars
-      f var (gcac, alloc') =
-        case lookup var alloc' of
-          Just _ -> (Incref var : gcac, updateAlloc alloc' var 1)
-          Nothing -> (gcac, alloc')
-  in (increfs, newAlloc)
+handleExpr alloc expr = (increfs, newAlloc)
+    where
+        vars = varsInExpr expr
+        (increfs, newAlloc) = foldr generateIncs ([], alloc) vars
+        -- let's go through the list of variables, see if they are allocations,
+        -- and if they are, add increment instructions to the list
+        generateIncs var (gcac, alloc') = gen (lookup var alloc')
+          where
+            gen :: Maybe Int -> ([GCAC], Alloc)
+            gen (Just _) = (Incref var : gcac, updateAlloc alloc' var 1)
+            gen Nothing = (gcac, alloc')
+
 
 -- recursively find all variables used in the expression
 varsInExpr :: Expr -> [String]
