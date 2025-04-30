@@ -1,10 +1,18 @@
-module PeepholeRefCount where
-
+module ReferenceCounting where
 import Data.List (nub)
 import Data.Map (Map)
 import qualified Data.Map as Map
 
--- Three-Address Code (TAC) representation
+-- =====================
+-- Reference Counting is the simplest form of garbage collection, we increment
+--  the reference count of a memory block every time that it's used, and decrement
+--  it when it's value is overwritten. When this count reaches 0, we can free the memory.
+-- =====================
+-- What happens when we have cyclic dataStructures?
+--  ie. inside of an allocated  memory block is a reference to another
+--  allocated memory block, and so on?
+-- =====================
+
 data Expr = 
          Var String            
          | Const String           
@@ -17,12 +25,13 @@ data TAC =
          | New String         -- allocates some memory for x
          deriving (Show, Eq)
 
+
 data GCAC = 
          Plain TAC
          | Incref String     -- incref x
          | Decref String     -- decref x
          | Free String       -- free x
-         deriving (Show, Eq)
+            deriving (Show, Eq)
 
 type Alloc = [(String, Int)] -- Variable to number of references (ignoring the actual memory address)
 
